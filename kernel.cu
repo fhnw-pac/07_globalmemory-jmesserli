@@ -30,13 +30,13 @@ using namespace std;
 * Example: gpuErrCheck(cudaMalloc(&deviceA, N * sizeof(int)));
 *          gpuErrCheck(cudaMemcpy(deviceA, hostA, N * sizeof(int), cudaMemcpyHostToDevice));
 */
-#define gpuErrCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+#define GPU_ERR_CHECK(ans) { gpu_assert((ans), __FILE__, __LINE__); }
 
-inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
+inline void gpu_assert(const cudaError_t code, const char* file, const int line, const bool abort = true)
 {
 	if (code != cudaSuccess)
 	{
-		std::cout << "GPUassert: " << cudaGetErrorString(code) << " " << file << " " << line << std::endl;
+		std::cout << "GPU assert: " << cudaGetErrorString(code) << " " << file << " " << line << std::endl;
 		if (abort)
 		{
 			exit(code);
@@ -44,48 +44,46 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 	}
 }
 
-
 // GPU kernel which access an vector with a strdie pattern
 __global__ void strided_kernel(int* vec, int size, int stride)
 {
 	//ToDo: Implement the strided kernel vec[i] = vec[i] + 1 
 }
 
-
 // Execute a loop of different strides accessing a vector as GPU kernels.
-// Meassure the spent time and print out the reached bandwidth in GB/s.
-void gpu_stride_loop(int* device_vec, int size)
+// Measure the spent time and print out the reached bandwidth in GB/s.
+void gpu_stride_loop(int* const device_vec, const int size)
 {
 	// Define some helper values
-	const int processedMB = size * sizeof(int) / 1024 / 1024 * 2; // 2x as 1 read and 1 write
-	const int blockSize = 256;
+	const int processed_mb = size * sizeof(int) / 1024 / 1024 * 2; // 2x as 1 read and 1 write
+	constexpr int block_size = 256;
 	float ms;
 
 	// Init CUDA events used to meassure timings 
-	cudaEvent_t startEvent, stopEvent;
-	gpuErrCheck(cudaEventCreate(&startEvent));
-	gpuErrCheck(cudaEventCreate(&stopEvent));
+	cudaEvent_t start_event, stop_event;
+	GPU_ERR_CHECK(cudaEventCreate(&start_event))
+	GPU_ERR_CHECK(cudaEventCreate(&stop_event))
 
 	// Warm up GPU (The first kernel of a program has more overhead than the followings)
-	gpuErrCheck(cudaEventRecord(startEvent, 0));
-	strided_kernel << <size / blockSize, blockSize >> >(device_vec, size, 1);
-	gpuErrCheck(cudaEventRecord(stopEvent, 0));
-	gpuErrCheck(cudaEventSynchronize(stopEvent));
+	GPU_ERR_CHECK(cudaEventRecord(start_event, nullptr))
+	strided_kernel<<<size / block_size, block_size>>>(device_vec, size, 1);
+	GPU_ERR_CHECK(cudaEventRecord(stop_event, nullptr))
+	GPU_ERR_CHECK(cudaEventSynchronize(stop_event))
 
-	gpuErrCheck(cudaEventElapsedTime(&ms, startEvent, stopEvent));
-	cout << "GPU warmup kernel: " << processedMB / ms << "GB/s bandwidth" << endl;
+	GPU_ERR_CHECK(cudaEventElapsedTime(&ms, start_event, stop_event))
+	cout << "GPU warmup kernel: " << processed_mb / ms << "GB/s bandwidth" << endl;
 
 	// ToDo: Implement the strided loop analogue the CPU implementation
 	//       Calculate and print the used Bandwidth
-	//       No need to reset the device_vec to 1, we are not interessted in the result
+	//       No need to reset the device_vec to 1, we are not interested in the result
 }
 
 
 // Execute a loop of different strides accessing a vector.
-// Meassure the spent time and print out the reached bandwidth in GB/s.
-void cpu_stride_loop(int* vec, int size)
+// Measure the spent time and print out the reached bandwidth in GB/s.
+void cpu_stride_loop(int* const vec, const int size)
 {
-	float processedMB = size * sizeof(int) / 1024 / 1024 * 2; // 2x as 1 read and 1 write
+	const float processed_mb = size * sizeof(int) / 1024 / 1024 * 2; // 2x as 1 read and 1 write
 	for (int stride = 1; stride <= 32; stride++)
 	{
 		auto start = chrono::high_resolution_clock::now();
@@ -98,7 +96,7 @@ void cpu_stride_loop(int* vec, int size)
 
 		auto stop = chrono::high_resolution_clock::now();
 		auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start);
-		cout << "CPU stride size " << stride << ": " << processedMB / duration.count() << "GB/s bandwidth" << endl;
+		cout << "CPU stride size " << stride << ": " << processed_mb / duration.count() << "GB/s bandwidth" << endl;
 	}
 }
 
@@ -107,33 +105,33 @@ void cpu_stride_loop(int* vec, int size)
 int main(void)
 {
 	// Define the size of the vector in MB
-	const int width_MB = 128;
-	const int width = width_MB * 1024 * 1024 / sizeof(int);
+	constexpr int width_mb = 128;
+	constexpr int width = width_mb * 1024 * 1024 / sizeof(int);
 
 	// Allocate and prepare input vector
-	int* hostVector = new int[width];
+	const auto host_vector = new int[width];
 	for (int index = 0; index < width; index++)
 	{
-		hostVector[index] = 1;
+		host_vector[index] = 1;
 	}
 
 	// Allocate device memory
-	int* deviceVector;
-	gpuErrCheck(cudaMalloc(&deviceVector, width * sizeof(int)));
+	int* device_vector;
+	GPU_ERR_CHECK(cudaMalloc(&device_vector, width * sizeof(int)))
 
 	// Copy data from host to device
-	gpuErrCheck(cudaMemcpy(deviceVector, hostVector, width * sizeof(int), cudaMemcpyHostToDevice));
+	GPU_ERR_CHECK(cudaMemcpy(device_vector, host_vector, width * sizeof(int), cudaMemcpyHostToDevice))
 
 	// run stride loop on CPU to have some reference values
-	cpu_stride_loop(hostVector, width);
+	cpu_stride_loop(host_vector, width);
 	cout << "--------------------------------------------------------" << endl;
 
 	// run stride loop on GPU
-	gpu_stride_loop(deviceVector, width);
+	gpu_stride_loop(device_vector, width);
 
 	// Free memory on device & host
-	cudaFree(deviceVector);
-	delete[] hostVector;
+	cudaFree(device_vector);
+	delete[] host_vector;
 
 	return 0;
 }
