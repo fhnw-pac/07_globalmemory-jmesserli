@@ -34,14 +34,10 @@ using namespace std;
 
 inline void gpu_assert(const cudaError_t code, const char* file, const int line, const bool abort = true)
 {
-	if (code != cudaSuccess)
-	{
-		std::cout << "GPU assert: " << cudaGetErrorString(code) << " " << file << " " << line << std::endl;
-		if (abort)
-		{
-			exit(code);
-		}
-	}
+	if (code == cudaSuccess) return;
+
+	std::cout << "GPU assert: " << cudaGetErrorString(code) << " " << file << " " << line << std::endl;
+	if (abort) exit(code);
 }
 
 // GPU kernel which access an vector with a stride pattern
@@ -86,7 +82,6 @@ void gpu_stride_loop(int* const device_vec, const int size)
 	}
 }
 
-
 // Execute a loop of different strides accessing a vector.
 // Measure the spent time and print out the reached bandwidth in GB/s.
 void cpu_stride_loop(int* const vec, const int size)
@@ -108,9 +103,8 @@ void cpu_stride_loop(int* const vec, const int size)
 	}
 }
 
-
-// Init und destruct memory and call the CPU and the GPU meassurment code.
-int main(void)
+// Init und destruct memory and call the CPU and the GPU measurement code.
+int main()
 {
 	// Define the size of the vector in MB
 	constexpr int width_mb = 128;
